@@ -15,9 +15,7 @@
     "@tanstack/react-router": "^1.170.17",
     "@tanstack/react-query": "^5.101.2",
     "@harknotes/shared": "workspace:*",
-    "@trpc/client": "^11.18.0",
-    "@trpc/react-query": "^11.18.0",
-    "better-auth": "^1.6.23",
+    "@tauri-apps/api": "^2.9.0",
     "tailwindcss": "^4.3.2"
   },
   "devDependencies": {

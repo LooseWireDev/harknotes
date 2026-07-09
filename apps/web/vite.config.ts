@@ -11,11 +11,11 @@ export default defineConfig({
     react(),
     tailwindcss(),
   ],
+  // Tauri expects a fixed dev port (see apps/desktop/src-tauri/tauri.conf.json devUrl).
   server: {
     port: 5173,
-    proxy: {
-      '/trpc': 'http://localhost:3000',
-      '/api': 'http://localhost:3000',
-    },
+    strictPort: true,
   },
+  // Do not obscure Rust-side errors in the webview console.
+  clearScreen: false,
 });

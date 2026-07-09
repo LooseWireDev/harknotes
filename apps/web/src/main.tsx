@@ -20,10 +20,6 @@ const rootElement = document.getElementById('root')!;
 ReactDOM.createRoot(rootElement).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
-
-      {/* hono: wrap with <trpc.Provider> when you add your first trpc.useQuery() call.
-          See apps/web/src/lib/trpc.ts for the client. */}
-
       <RouterProvider router={router} />
     </QueryClientProvider>
   </React.StrictMode>,
