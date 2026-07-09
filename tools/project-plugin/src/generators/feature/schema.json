@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/schema",
+  "$id": "ForgeFeature",
+  "title": "Forge Feature Generator",
+  "type": "object",
+  "properties": {
+    "name": {
+      "type": "string",
+      "description": "Feature name — camelCase identifier (e.g. userProfile)",
+      "pattern": "^[a-z][a-zA-Z0-9]*$",
+      "$default": { "$source": "argv", "index": 0 }
+    },
+    "apps": {
+      "type": "string",
+      "description": "Comma-separated apps: api,web,mobile,desktop,static"
+    },
+    "targetDir": {
+      "type": "string",
+      "description": "Absolute path to the generated project root."
+    }
+  },
+  "required": ["name", "apps"]
+}

@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.env
+.env.local
+*.db
+data/
+.nx/
+.turbo/
+
+.claude/worktrees
+.claude/settings.local.json

@@ -1,0 +1,9 @@
+{
+  "generators": {
+    "feature": {
+      "factory": "./src/generators/feature/generator",
+      "schema": "./src/generators/feature/schema.json",
+      "description": "Generate a cross-app feature scaffold"
+    }
+  }
+}

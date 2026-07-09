@@ -1,0 +1,15 @@
+{
+  "productName": "harknotes",
+  "version": "0.0.0",
+  "identifier": "com.harknotes.app",
+  "build": {
+    "beforeDevCommand": "cd ../web && pnpm dev",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "cd ../web && pnpm build",
+    "frontendDist": "../web/dist"
+  },
+  "app": {
+    "title": "harknotes",
+    "windows": [{ "title": "harknotes", "width": 1200, "height": 800 }]
+  }
+}
