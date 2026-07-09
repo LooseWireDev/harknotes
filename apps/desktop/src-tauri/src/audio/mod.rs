@@ -14,7 +14,9 @@ use std::time::Instant;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager};
 
-use chunker::ChunkSummary;
+use crate::db::{ChunkStatus, Db};
+use crate::transcription::{ChunkJob, WorkerHandle};
+use chunker::{ChunkSink, ChunkSummary};
 
 /// Whisper.cpp input format: 16kHz, mono, signed 16-bit PCM.
 pub const SAMPLE_RATE: u32 = 16_000;
@@ -97,15 +99,56 @@ pub struct RecordingManager {
     active: Option<ActiveRecording>,
 }
 
+/// Persist the chunk row and hand it to the transcription queue, synchronously
+/// at cut time — a chunk on disk is always either in the DB or not yet counted.
+fn make_sink(db: Arc<Db>, worker: WorkerHandle, meeting_id: String) -> ChunkSink {
+    Box::new(move |c: &ChunkSummary| {
+        let status = if c.silent { ChunkStatus::Silent } else { ChunkStatus::Pending };
+        if let Err(e) = db.insert_chunk(
+            &meeting_id,
+            c.stream.as_str(),
+            c.index,
+            &c.path,
+            c.start_ms,
+            c.duration_ms,
+            status,
+        ) {
+            eprintln!("[audio] persist chunk row: {e}");
+        }
+        worker.enqueue(ChunkJob {
+            meeting_id: meeting_id.clone(),
+            stream: c.stream.as_str().to_string(),
+            idx: c.index,
+            wav_path: c.path.clone(),
+            start_ms: c.start_ms,
+            duration_ms: c.duration_ms,
+            silent: c.silent,
+            already_persisted: true,
+        });
+    })
+}
+
 impl RecordingManager {
-    pub fn start(&mut self, app: &AppHandle) -> Result<StartedRecording, String> {
+    pub fn start(
+        &mut self,
+        app: &AppHandle,
+        db: &Arc<Db>,
+        worker: &WorkerHandle,
+    ) -> Result<StartedRecording, String> {
         if self.active.is_some() {
             return Err("already recording".into());
         }
 
-        let meeting_id = chrono::Local::now().format("%Y-%m-%d_%H-%M-%S").to_string();
+        let now = chrono::Local::now();
+        let meeting_id = now.format("%Y-%m-%d_%H-%M-%S").to_string();
         let dir = recordings_dir(app)?.join(&meeting_id);
         std::fs::create_dir_all(&dir).map_err(|e| format!("create recording dir: {e}"))?;
+
+        let model = db
+            .get_setting("whisper_model")?
+            .unwrap_or_else(|| crate::transcription::models::DEFAULT_MODEL.to_string());
+        let title = now.format("Meeting %b %-d, %-H:%M").to_string();
+        db.insert_meeting(&meeting_id, &title, &model)?;
 
         let stop_flag = Arc::new(AtomicBool::new(false));
         let epoch = Instant::now();
@@ -115,6 +158,7 @@ impl RecordingManager {
             dir.clone(),
             stop_flag.clone(),
             epoch,
+            make_sink(db.clone(), worker.clone(), meeting_id.clone()),
         )?;
         // Mic failure should not abort the whole recording (system audio alone is
         // still a useful transcript) — surface it as a stream error event instead.
@@ -123,6 +167,7 @@ impl RecordingManager {
             dir.clone(),
             stop_flag.clone(),
             epoch,
+            make_sink(db.clone(), worker.clone(), meeting_id.clone()),
         ) {
             Ok(handle) => Some(handle),
             Err(message) => {
@@ -148,7 +193,7 @@ impl RecordingManager {
         })
     }
 
-    pub fn stop(&mut self) -> Result<StoppedRecording, String> {
+    pub fn stop(&mut self, app: &AppHandle, db: &Arc<Db>) -> Result<StoppedRecording, String> {
         let mut active = self.active.take().ok_or("not recording")?;
         active.stop_flag.store(true, Ordering::Relaxed);
 
@@ -166,9 +211,21 @@ impl RecordingManager {
             let _ = ticker.join();
         }
 
+        let duration_seconds = active.started_at.elapsed().as_secs();
+        db.finish_recording(&active.meeting_id, duration_seconds)?;
+        // Everything may already be transcribed (chunks are processed live).
+        if db.try_mark_ready(&active.meeting_id)? {
+            let _ = app.emit(
+                "transcribe://meeting-ready",
+                crate::transcription::MeetingReadyEvent {
+                    meeting_id: active.meeting_id.clone(),
+                },
+            );
+        }
+
         Ok(StoppedRecording {
             meeting_id: active.meeting_id,
-            duration_seconds: active.started_at.elapsed().as_secs(),
+            duration_seconds,
             mic_chunks,
             system_chunks,
         })

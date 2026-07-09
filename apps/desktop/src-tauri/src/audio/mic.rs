@@ -12,7 +12,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use crossbeam_channel::{bounded, Receiver, Sender};
 use tauri::AppHandle;
 
-use super::chunker::{ChunkSummary, Chunker};
+use super::chunker::{ChunkSink, ChunkSummary, Chunker};
 use super::{emit_level, emit_stream_error, StreamKind, LEVEL_EVENT_INTERVAL_MS, SAMPLE_RATE};
 
 pub fn is_available() -> bool {
@@ -24,6 +24,7 @@ pub fn spawn_capture_thread(
     dir: PathBuf,
     stop_flag: Arc<AtomicBool>,
     epoch: Instant,
+    sink: ChunkSink,
 ) -> Result<JoinHandle<Vec<ChunkSummary>>, String> {
     // Validate the device on the caller thread so start() can report
     // "no microphone" synchronously.
@@ -32,7 +33,7 @@ pub fn spawn_capture_thread(
         .ok_or("no default microphone device")?;
 
     Ok(std::thread::spawn(move || {
-        match capture_loop(&app, &dir, stop_flag, epoch) {
+        match capture_loop(&app, &dir, stop_flag, epoch, sink) {
             Ok(chunks) => chunks,
             Err(e) => {
                 emit_stream_error(&app, StreamKind::Mic, &e);
@@ -47,7 +48,9 @@ fn capture_loop(
     dir: &std::path::Path,
     stop_flag: Arc<AtomicBool>,
     epoch: Instant,
+    sink: ChunkSink,
 ) -> Result<Vec<ChunkSummary>, String> {
+    let mut sink = Some(sink);
     let device = cpal::default_host()
         .default_input_device()
         .ok_or("no default microphone device")?;
@@ -110,7 +113,7 @@ fn capture_loop(
                 let chunker = chunker.get_or_insert_with(|| {
                     let offset =
                         epoch.elapsed().as_millis() as u64 * SAMPLE_RATE as u64 / 1000;
-                    Chunker::new(Some(app.clone()), StreamKind::Mic, dir, offset)
+                    Chunker::new(Some(app.clone()), StreamKind::Mic, dir, offset, sink.take())
                 });
                 if last_level.elapsed() >= Duration::from_millis(LEVEL_EVENT_INTERVAL_MS) {
                     emit_level(app, StreamKind::Mic, super::rms_i16(&samples));

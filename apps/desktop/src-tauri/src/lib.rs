@@ -2,8 +2,10 @@
 // Native concerns live here: audio capture, whisper sidecar, storage, tray.
 
 mod audio;
+mod db;
+mod transcription;
 
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use tauri::{
     menu::{Menu, MenuItem},
@@ -12,6 +14,9 @@ use tauri::{
 };
 
 use audio::{RecordingManager, RecordingStatus, StartedRecording, StoppedRecording};
+use db::{Db, MeetingRow, Segment};
+use transcription::models::ModelInfo;
+use transcription::WorkerHandle;
 
 type ManagedRecording<'a> = State<'a, Mutex<RecordingManager>>;
 
@@ -35,18 +40,71 @@ fn mic_available() -> bool {
 fn start_recording(
     app: AppHandle,
     state: ManagedRecording<'_>,
+    db: State<'_, Arc<Db>>,
+    worker: State<'_, WorkerHandle>,
 ) -> Result<StartedRecording, String> {
-    state.lock().map_err(|e| e.to_string())?.start(&app)
+    state
+        .lock()
+        .map_err(|e| e.to_string())?
+        .start(&app, &db, &worker)
 }
 
 #[tauri::command]
-fn stop_recording(state: ManagedRecording<'_>) -> Result<StoppedRecording, String> {
-    state.lock().map_err(|e| e.to_string())?.stop()
+fn stop_recording(
+    app: AppHandle,
+    state: ManagedRecording<'_>,
+    db: State<'_, Arc<Db>>,
+) -> Result<StoppedRecording, String> {
+    state.lock().map_err(|e| e.to_string())?.stop(&app, &db)
 }
 
 #[tauri::command]
 fn recording_status(state: ManagedRecording<'_>) -> Result<RecordingStatus, String> {
     Ok(state.lock().map_err(|e| e.to_string())?.status())
+}
+
+#[tauri::command]
+fn list_meetings(db: State<'_, Arc<Db>>) -> Result<Vec<MeetingRow>, String> {
+    db.list_meetings()
+}
+
+#[tauri::command]
+fn get_transcript(db: State<'_, Arc<Db>>, meeting_id: String) -> Result<Vec<Segment>, String> {
+    db.transcript(&meeting_id)
+}
+
+#[tauri::command]
+fn list_models(app: AppHandle) -> Result<Vec<ModelInfo>, String> {
+    transcription::models::list(&app)
+}
+
+/// Fire-and-forget: progress arrives via model:// events.
+#[tauri::command]
+fn download_model(app: AppHandle, model: String) -> Result<(), String> {
+    // Validate before spawning so obvious mistakes fail synchronously.
+    transcription::models::model_path(&app, &model)?;
+    std::thread::spawn(move || {
+        if let Err(e) = transcription::models::download(&app, &model) {
+            use tauri::Emitter;
+            let _ = app.emit("model://error", serde_json::json!({ "model": model, "error": e }));
+        }
+    });
+    Ok(())
+}
+
+#[tauri::command]
+fn get_whisper_model(db: State<'_, Arc<Db>>) -> Result<String, String> {
+    Ok(db
+        .get_setting("whisper_model")?
+        .unwrap_or_else(|| transcription::models::DEFAULT_MODEL.to_string()))
+}
+
+#[tauri::command]
+fn set_whisper_model(db: State<'_, Arc<Db>>, model: String) -> Result<(), String> {
+    if !transcription::models::MODELS.iter().any(|&(name, _)| name == model) {
+        return Err(format!("unknown whisper model: {model}"));
+    }
+    db.set_setting("whisper_model", &model)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -60,8 +118,23 @@ pub fn run() {
             start_recording,
             stop_recording,
             recording_status,
+            list_meetings,
+            get_transcript,
+            list_models,
+            download_model,
+            get_whisper_model,
+            set_whisper_model,
         ])
         .setup(|app| {
+            // Storage + transcription worker (resumes interrupted chunks).
+            let data_dir = app.path().app_data_dir()?;
+            std::fs::create_dir_all(&data_dir)?;
+            let db = Arc::new(
+                Db::open(&data_dir.join("harknotes.db")).map_err(std::io::Error::other)?,
+            );
+            app.manage(db.clone());
+            app.manage(transcription::spawn(app.handle().clone(), db));
+
             let show = MenuItem::with_id(app, "show", "Show Harknotes", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&show, &quit])?;

@@ -25,6 +25,10 @@ pub const SILENT_CHUNK_RMS: f32 = 0.004;
 /// Don't bother writing a trailing chunk shorter than this on finalize.
 const MIN_FINAL_SAMPLES: usize = SAMPLE_RATE as usize / 2;
 
+/// Called synchronously after each chunk WAV is written — used to persist the
+/// chunk row and enqueue transcription before anything else can go wrong.
+pub type ChunkSink = Box<dyn FnMut(&ChunkSummary) + Send>;
+
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ChunkSummary {
@@ -51,6 +55,7 @@ pub struct Chunker {
     /// Next frame boundary to scan from.
     scan_pos: usize,
     written: Vec<ChunkSummary>,
+    sink: Option<ChunkSink>,
 }
 
 impl Chunker {
@@ -62,6 +67,7 @@ impl Chunker {
         stream: StreamKind,
         dir: &Path,
         start_offset_samples: u64,
+        sink: Option<ChunkSink>,
     ) -> Self {
         Self {
             app,
@@ -73,6 +79,7 @@ impl Chunker {
             quietest_frame: None,
             scan_pos: TARGET_SAMPLES,
             written: Vec::new(),
+            sink,
         }
     }
 
@@ -136,6 +143,9 @@ impl Chunker {
         if let Some(app) = &self.app {
             let _ = app.emit("recording://chunk", summary.clone());
         }
+        if let Some(sink) = &mut self.sink {
+            sink(&summary);
+        }
         self.written.push(summary);
 
         self.buffer_start_sample += chunk.len() as u64;
@@ -171,7 +181,7 @@ mod tests {
     use super::*;
 
     fn chunker(dir: &Path) -> Chunker {
-        Chunker::new(None, StreamKind::Mic, dir, 0)
+        Chunker::new(None, StreamKind::Mic, dir, 0, None)
     }
 
     fn loud(n: usize) -> Vec<i16> {

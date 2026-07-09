@@ -12,3 +12,7 @@ data/
 # Tauri / Rust
 apps/desktop/src-tauri/target/
 apps/desktop/src-tauri/gen/schemas/
+
+# whisper sidecar build artifacts
+apps/desktop/src-tauri/binaries/
+apps/desktop/.whisper-build/

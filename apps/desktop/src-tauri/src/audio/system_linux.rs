@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 
 use tauri::AppHandle;
 
-use super::chunker::{ChunkSummary, Chunker};
+use super::chunker::{ChunkSink, ChunkSummary, Chunker};
 use super::{emit_level, emit_stream_error, StreamKind, LEVEL_EVENT_INTERVAL_MS};
 
 pub fn is_available() -> bool {
@@ -105,12 +105,13 @@ pub fn spawn_capture_thread(
     dir: std::path::PathBuf,
     stop_flag: Arc<AtomicBool>,
     epoch: Instant,
+    sink: ChunkSink,
 ) -> Result<JoinHandle<Vec<ChunkSummary>>, String> {
     let monitor = get_monitor_source()?;
     let child = spawn_parec(&monitor)?;
 
     Ok(std::thread::spawn(move || {
-        capture_loop(app, &dir, child, stop_flag, epoch)
+        capture_loop(app, &dir, child, stop_flag, epoch, sink)
     }))
 }
 
@@ -142,7 +143,9 @@ fn capture_loop(
     mut child: Child,
     stop_flag: Arc<AtomicBool>,
     epoch: Instant,
+    sink: ChunkSink,
 ) -> Vec<ChunkSummary> {
+    let mut sink = Some(sink);
     let mut stdout = match child.stdout.take() {
         Some(s) => s,
         None => {
@@ -188,7 +191,7 @@ fn capture_loop(
                 let chunker = chunker.get_or_insert_with(|| {
                     let offset =
                         epoch.elapsed().as_millis() as u64 * super::SAMPLE_RATE as u64 / 1000;
-                    Chunker::new(Some(app.clone()), StreamKind::System, dir, offset)
+                    Chunker::new(Some(app.clone()), StreamKind::System, dir, offset, sink.take())
                 });
                 if last_level.elapsed() >= Duration::from_millis(LEVEL_EVENT_INTERVAL_MS) {
                     emit_level(&app, StreamKind::System, super::rms_i16(&samples));
