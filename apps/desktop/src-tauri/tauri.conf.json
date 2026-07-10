@@ -6,7 +6,7 @@
     "beforeDevCommand": "cd ../web && pnpm dev",
     "devUrl": "http://localhost:5173",
     "beforeBuildCommand": "cd ../web && pnpm build",
-    "frontendDist": "../web/dist"
+    "frontendDist": "../../web/dist"
   },
   "app": {
     "windows": [
@@ -25,7 +25,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["deb", "rpm", "appimage"],
+    "targets": ["deb", "rpm"],
     "externalBin": ["binaries/whisper-cli"],
     "icon": [
       "icons/32x32.png",
