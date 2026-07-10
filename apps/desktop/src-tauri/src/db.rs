@@ -127,6 +127,39 @@ impl Db {
         })
     }
 
+    pub fn get_meeting(&self, id: &str) -> Result<MeetingRow, String> {
+        self.with(|c| {
+            c.query_row(
+                "SELECT id, title, created_at, duration_seconds, status, whisper_model
+                 FROM meetings WHERE id = ?1",
+                [id],
+                |r| {
+                    Ok(MeetingRow {
+                        id: r.get(0)?,
+                        title: r.get(1)?,
+                        created_at: r.get(2)?,
+                        duration_seconds: r.get::<_, i64>(3)? as u64,
+                        status: r.get(4)?,
+                        whisper_model: r.get(5)?,
+                    })
+                },
+            )
+        })
+    }
+
+    pub fn rename_meeting(&self, id: &str, title: &str) -> Result<(), String> {
+        self.with(|c| {
+            c.execute("UPDATE meetings SET title = ?2 WHERE id = ?1", (id, title))
+                .map(|_| ())
+        })
+    }
+
+    pub fn delete_meeting(&self, id: &str) -> Result<(), String> {
+        self.with(|c| {
+            c.execute("DELETE FROM meetings WHERE id = ?1", [id]).map(|_| ())
+        })
+    }
+
     pub fn list_meetings(&self) -> Result<Vec<MeetingRow>, String> {
         self.with(|c| {
             let mut stmt = c.prepare(

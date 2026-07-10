@@ -3,6 +3,7 @@
 
 mod audio;
 mod db;
+mod export;
 mod transcription;
 
 use std::sync::{Arc, Mutex};
@@ -69,6 +70,42 @@ fn list_meetings(db: State<'_, Arc<Db>>) -> Result<Vec<MeetingRow>, String> {
 }
 
 #[tauri::command]
+fn get_meeting(db: State<'_, Arc<Db>>, meeting_id: String) -> Result<MeetingRow, String> {
+    db.get_meeting(&meeting_id)
+}
+
+#[tauri::command]
+fn rename_meeting(
+    db: State<'_, Arc<Db>>,
+    meeting_id: String,
+    title: String,
+) -> Result<(), String> {
+    let trimmed = title.trim();
+    if trimmed.is_empty() {
+        return Err("title cannot be empty".into());
+    }
+    db.rename_meeting(&meeting_id, trimmed)
+}
+
+#[tauri::command]
+fn delete_meeting(app: AppHandle, db: State<'_, Arc<Db>>, meeting_id: String) -> Result<(), String> {
+    db.delete_meeting(&meeting_id)?;
+    // Remove the recording WAVs too; DB row is already gone so a failure here
+    // only leaks disk space, never state.
+    let dir = audio::recordings_dir(&app)?.join(&meeting_id);
+    if dir.exists() {
+        std::fs::remove_dir_all(&dir).map_err(|e| format!("delete recordings: {e}"))?;
+    }
+    Ok(())
+}
+
+/// Export a meeting to markdown; returns the written file path.
+#[tauri::command]
+fn export_meeting(app: AppHandle, db: State<'_, Arc<Db>>, meeting_id: String) -> Result<String, String> {
+    export::export_meeting(&app, &db, &meeting_id)
+}
+
+#[tauri::command]
 fn get_transcript(db: State<'_, Arc<Db>>, meeting_id: String) -> Result<Vec<Segment>, String> {
     db.transcript(&meeting_id)
 }
@@ -119,6 +156,10 @@ pub fn run() {
             stop_recording,
             recording_status,
             list_meetings,
+            get_meeting,
+            rename_meeting,
+            delete_meeting,
+            export_meeting,
             get_transcript,
             list_models,
             download_model,

@@ -49,6 +49,14 @@ export interface ModelProgress {
 }
 
 export const listMeetings = (): Promise<Meeting[]> => invoke('list_meetings');
+export const getMeeting = (meetingId: string): Promise<Meeting> =>
+  invoke('get_meeting', { meetingId });
+export const renameMeeting = (meetingId: string, title: string): Promise<void> =>
+  invoke('rename_meeting', { meetingId, title });
+export const deleteMeeting = (meetingId: string): Promise<void> =>
+  invoke('delete_meeting', { meetingId });
+export const exportMeeting = (meetingId: string): Promise<string> =>
+  invoke('export_meeting', { meetingId });
 export const getTranscript = (meetingId: string): Promise<Segment[]> =>
   invoke('get_transcript', { meetingId });
 export const listModels = (): Promise<ModelInfo[]> => invoke('list_models');
