@@ -3,7 +3,10 @@
   "compilerOptions": {
     "noEmit": true,
     "declaration": false,
-    "types": ["node"]
+    "types": ["node"],
+    "paths": {
+      "@/*": ["./src/*"]
+    }
   },
   "include": ["src/**/*.ts", "src/**/*.tsx"]
 }
