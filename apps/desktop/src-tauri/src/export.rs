@@ -24,6 +24,12 @@ pub fn meeting_markdown(meeting: &MeetingRow, segments: &[Segment]) -> String {
         out.push_str(&format!("- Transcribed with: whisper {model}\n"));
     }
 
+    if !meeting.notes.trim().is_empty() {
+        out.push_str("\n## My notes\n\n");
+        out.push_str(meeting.notes.trim());
+        out.push('\n');
+    }
+
     if let Some(summary) = meeting
         .summary_json
         .as_deref()
@@ -148,14 +154,17 @@ mod tests {
                     .into(),
             ),
             summarized_at: Some("2026-07-09 17:00:00".into()),
+            notes: "Remember to follow up with Sam.".into(),
+            tags: vec!["work".into()],
         };
         let segments = vec![
-            Segment { speaker: "User".into(), text: "Hi all.".into(), start_ms: 500, end_ms: 1500 },
-            Segment { speaker: "Meeting".into(), text: "Hello!".into(), start_ms: 2000, end_ms: 2600 },
+            Segment { id: None, speaker: "User".into(), text: "Hi all.".into(), start_ms: 500, end_ms: 1500 },
+            Segment { id: None, speaker: "Meeting".into(), text: "Hello!".into(), start_ms: 2000, end_ms: 2600 },
         ];
         let md = meeting_markdown(&meeting, &segments);
         assert!(md.starts_with("# Standup\n"));
         assert!(md.contains("- Duration: 2:05\n"));
+        assert!(md.contains("## My notes\n\nRemember to follow up with Sam.\n"));
         assert!(md.contains("## Summary\n\nWe met.\n"));
         assert!(md.contains("- **Roadmap**: Q3 plan.\n"));
         assert!(md.contains("- [ ] **User** — ship v1\n"));

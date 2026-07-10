@@ -132,6 +132,7 @@ pub fn parse_whisper_json(
                 return None;
             }
             Some(Segment {
+                id: None,
                 speaker: speaker.to_string(),
                 text,
                 start_ms: chunk_start_ms + seg.offsets.from,

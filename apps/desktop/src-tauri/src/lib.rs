@@ -15,7 +15,7 @@ use tauri::{
 };
 
 use audio::{RecordingManager, RecordingStatus, StartedRecording, StoppedRecording};
-use db::{Db, MeetingRow, Segment};
+use db::{Db, MeetingRow, SearchResult, Segment};
 use transcription::models::ModelInfo;
 use transcription::WorkerHandle;
 
@@ -97,6 +97,49 @@ fn delete_meeting(app: AppHandle, db: State<'_, Arc<Db>>, meeting_id: String) ->
         std::fs::remove_dir_all(&dir).map_err(|e| format!("delete recordings: {e}"))?;
     }
     Ok(())
+}
+
+#[tauri::command]
+fn update_segment(db: State<'_, Arc<Db>>, segment_id: i64, text: String) -> Result<(), String> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return Err("segment text cannot be empty".into());
+    }
+    db.update_segment(segment_id, trimmed)
+}
+
+#[tauri::command]
+fn rename_speaker(
+    db: State<'_, Arc<Db>>,
+    meeting_id: String,
+    from: String,
+    to: String,
+) -> Result<usize, String> {
+    let to = to.trim();
+    if to.is_empty() {
+        return Err("speaker name cannot be empty".into());
+    }
+    db.rename_speaker(&meeting_id, &from, to)
+}
+
+#[tauri::command]
+fn set_notes(db: State<'_, Arc<Db>>, meeting_id: String, notes: String) -> Result<(), String> {
+    db.set_notes(&meeting_id, &notes)
+}
+
+#[tauri::command]
+fn set_tags(db: State<'_, Arc<Db>>, meeting_id: String, tags: Vec<String>) -> Result<(), String> {
+    let cleaned: Vec<String> = tags
+        .into_iter()
+        .map(|t| t.trim().to_lowercase())
+        .filter(|t| !t.is_empty())
+        .collect();
+    db.set_tags(&meeting_id, &cleaned)
+}
+
+#[tauri::command]
+fn search_meetings(db: State<'_, Arc<Db>>, query: String) -> Result<Vec<SearchResult>, String> {
+    db.search(&query, 50)
 }
 
 /// Export a meeting to markdown; returns the written file path.
@@ -199,6 +242,11 @@ pub fn run() {
             get_meeting,
             rename_meeting,
             delete_meeting,
+            update_segment,
+            rename_speaker,
+            set_notes,
+            set_tags,
+            search_meetings,
             export_meeting,
             get_transcript,
             list_models,
