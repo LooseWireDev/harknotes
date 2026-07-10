@@ -129,6 +129,46 @@ fn download_model(app: AppHandle, model: String) -> Result<(), String> {
     Ok(())
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AiSettings {
+    base_url: String,
+    api_key: String,
+    model: String,
+}
+
+#[tauri::command]
+fn get_ai_settings(db: State<'_, Arc<Db>>) -> Result<AiSettings, String> {
+    Ok(AiSettings {
+        base_url: db
+            .get_setting("ai_base_url")?
+            .unwrap_or_else(|| "http://localhost:11434/v1".to_string()),
+        api_key: db.get_setting("ai_api_key")?.unwrap_or_default(),
+        model: db
+            .get_setting("ai_model")?
+            .unwrap_or_else(|| "qwen3:4b".to_string()),
+    })
+}
+
+#[tauri::command]
+fn set_ai_settings(db: State<'_, Arc<Db>>, settings: AiSettings) -> Result<(), String> {
+    db.set_setting("ai_base_url", settings.base_url.trim())?;
+    db.set_setting("ai_api_key", settings.api_key.trim())?;
+    db.set_setting("ai_model", settings.model.trim())
+}
+
+#[tauri::command]
+fn save_summary(
+    db: State<'_, Arc<Db>>,
+    meeting_id: String,
+    summary_json: String,
+) -> Result<(), String> {
+    // Must be valid JSON — the note view renders it structurally.
+    serde_json::from_str::<serde_json::Value>(&summary_json)
+        .map_err(|e| format!("summary is not valid JSON: {e}"))?;
+    db.save_summary(&meeting_id, &summary_json)
+}
+
 #[tauri::command]
 fn get_whisper_model(db: State<'_, Arc<Db>>) -> Result<String, String> {
     Ok(db
@@ -165,6 +205,9 @@ pub fn run() {
             download_model,
             get_whisper_model,
             set_whisper_model,
+            get_ai_settings,
+            set_ai_settings,
+            save_summary,
         ])
         .setup(|app| {
             // Storage + transcription worker (resumes interrupted chunks).

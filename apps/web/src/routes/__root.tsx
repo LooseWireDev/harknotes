@@ -21,6 +21,12 @@ function RootLayout(): React.ReactElement {
         >
           Record
         </Link>
+        <Link
+          to="/settings"
+          className="ml-auto text-sm text-neutral-500 hover:text-neutral-900 [&.active]:font-medium [&.active]:text-neutral-900"
+        >
+          Settings
+        </Link>
       </nav>
       <main className="flex-1">
         <Outlet />

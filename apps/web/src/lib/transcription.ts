@@ -16,6 +16,8 @@ export interface Meeting {
   durationSeconds: number;
   status: 'recording' | 'transcribing' | 'ready';
   whisperModel: string | null;
+  summaryJson: string | null;
+  summarizedAt: string | null;
 }
 
 export interface ModelInfo {

@@ -46,6 +46,9 @@ pub struct MeetingRow {
     pub duration_seconds: u64,
     pub status: String,
     pub whisper_model: Option<String>,
+    /// JSON blob produced by the summarizer (schema owned by the frontend).
+    pub summary_json: Option<String>,
+    pub summarized_at: Option<String>,
 }
 
 #[derive(Clone)]
@@ -130,20 +133,23 @@ impl Db {
     pub fn get_meeting(&self, id: &str) -> Result<MeetingRow, String> {
         self.with(|c| {
             c.query_row(
-                "SELECT id, title, created_at, duration_seconds, status, whisper_model
+                "SELECT id, title, created_at, duration_seconds, status, whisper_model,
+                        summary_json, summarized_at
                  FROM meetings WHERE id = ?1",
                 [id],
-                |r| {
-                    Ok(MeetingRow {
-                        id: r.get(0)?,
-                        title: r.get(1)?,
-                        created_at: r.get(2)?,
-                        duration_seconds: r.get::<_, i64>(3)? as u64,
-                        status: r.get(4)?,
-                        whisper_model: r.get(5)?,
-                    })
-                },
+                map_meeting_row,
             )
+        })
+    }
+
+    pub fn save_summary(&self, id: &str, summary_json: &str) -> Result<(), String> {
+        self.with(|c| {
+            c.execute(
+                "UPDATE meetings SET summary_json = ?2, summarized_at = datetime('now')
+                 WHERE id = ?1",
+                (id, summary_json),
+            )
+            .map(|_| ())
         })
     }
 
@@ -163,20 +169,12 @@ impl Db {
     pub fn list_meetings(&self) -> Result<Vec<MeetingRow>, String> {
         self.with(|c| {
             let mut stmt = c.prepare(
-                "SELECT id, title, created_at, duration_seconds, status, whisper_model
+                "SELECT id, title, created_at, duration_seconds, status, whisper_model,
+                        summary_json, summarized_at
                  FROM meetings ORDER BY created_at DESC",
             )?;
             let rows = stmt
-                .query_map([], |r| {
-                    Ok(MeetingRow {
-                        id: r.get(0)?,
-                        title: r.get(1)?,
-                        created_at: r.get(2)?,
-                        duration_seconds: r.get::<_, i64>(3)? as u64,
-                        status: r.get(4)?,
-                        whisper_model: r.get(5)?,
-                    })
-                })?
+                .query_map([], map_meeting_row)?
                 .collect::<rusqlite::Result<Vec<_>>>()?;
             Ok(rows)
         })
@@ -324,6 +322,19 @@ impl Db {
             .map(|_| ())
         })
     }
+}
+
+fn map_meeting_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<MeetingRow> {
+    Ok(MeetingRow {
+        id: r.get(0)?,
+        title: r.get(1)?,
+        created_at: r.get(2)?,
+        duration_seconds: r.get::<_, i64>(3)? as u64,
+        status: r.get(4)?,
+        whisper_model: r.get(5)?,
+        summary_json: r.get(6)?,
+        summarized_at: r.get(7)?,
+    })
 }
 
 const SCHEMA: &str = "

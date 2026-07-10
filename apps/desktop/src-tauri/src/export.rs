@@ -24,6 +24,14 @@ pub fn meeting_markdown(meeting: &MeetingRow, segments: &[Segment]) -> String {
         out.push_str(&format!("- Transcribed with: whisper {model}\n"));
     }
 
+    if let Some(summary) = meeting
+        .summary_json
+        .as_deref()
+        .and_then(|j| serde_json::from_str::<serde_json::Value>(j).ok())
+    {
+        append_summary(&mut out, &summary);
+    }
+
     out.push_str("\n## Transcript\n\n");
     if segments.is_empty() {
         out.push_str("_No transcript._\n");
@@ -38,6 +46,52 @@ pub fn meeting_markdown(meeting: &MeetingRow, segments: &[Segment]) -> String {
         }
     }
     out
+}
+
+fn append_summary(out: &mut String, summary: &serde_json::Value) {
+    let str_of = |v: &serde_json::Value| v.as_str().unwrap_or("").to_string();
+
+    if let Some(s) = summary.get("summary").and_then(|v| v.as_str()) {
+        if !s.is_empty() {
+            out.push_str("\n## Summary\n\n");
+            out.push_str(s);
+            out.push('\n');
+        }
+    }
+    if let Some(topics) = summary.get("keyTopics").and_then(|v| v.as_array()) {
+        if !topics.is_empty() {
+            out.push_str("\n## Key topics\n\n");
+            for t in topics {
+                out.push_str(&format!(
+                    "- **{}**: {}\n",
+                    t.get("topic").map(&str_of).unwrap_or_default(),
+                    t.get("detail").map(&str_of).unwrap_or_default()
+                ));
+            }
+        }
+    }
+    if let Some(items) = summary.get("actionItems").and_then(|v| v.as_array()) {
+        if !items.is_empty() {
+            out.push_str("\n## Action items\n\n");
+            for a in items {
+                out.push_str(&format!(
+                    "- [ ] **{}** — {}\n",
+                    a.get("speaker").map(&str_of).unwrap_or_default(),
+                    a.get("action").map(&str_of).unwrap_or_default()
+                ));
+            }
+        }
+    }
+    for (key, heading) in [("decisions", "Decisions"), ("openQuestions", "Open questions")] {
+        if let Some(list) = summary.get(key).and_then(|v| v.as_array()) {
+            if !list.is_empty() {
+                out.push_str(&format!("\n## {heading}\n\n"));
+                for item in list {
+                    out.push_str(&format!("- {}\n", str_of(item)));
+                }
+            }
+        }
+    }
 }
 
 /// Sanitize a meeting title into a safe filename stem.
@@ -89,6 +143,11 @@ mod tests {
             duration_seconds: 125,
             status: "ready".into(),
             whisper_model: Some("base".into()),
+            summary_json: Some(
+                r#"{"summary":"We met.","keyTopics":[{"topic":"Roadmap","detail":"Q3 plan."}],"actionItems":[{"speaker":"User","action":"ship v1"}],"decisions":["Use Tauri"],"openQuestions":["When?"]}"#
+                    .into(),
+            ),
+            summarized_at: Some("2026-07-09 17:00:00".into()),
         };
         let segments = vec![
             Segment { speaker: "User".into(), text: "Hi all.".into(), start_ms: 500, end_ms: 1500 },
@@ -97,6 +156,11 @@ mod tests {
         let md = meeting_markdown(&meeting, &segments);
         assert!(md.starts_with("# Standup\n"));
         assert!(md.contains("- Duration: 2:05\n"));
+        assert!(md.contains("## Summary\n\nWe met.\n"));
+        assert!(md.contains("- **Roadmap**: Q3 plan.\n"));
+        assert!(md.contains("- [ ] **User** — ship v1\n"));
+        assert!(md.contains("## Decisions\n\n- Use Tauri\n"));
+        assert!(md.contains("## Open questions\n\n- When?\n"));
         assert!(md.contains("[0:00] **User**: Hi all.\n"));
         assert!(md.contains("[0:02] **Meeting**: Hello!\n"));
     }

@@ -9,10 +9,16 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as RecordRouteImport } from './routes/record'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as MeetingMeetingIdRouteImport } from './routes/meeting.$meetingId'
 
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RecordRoute = RecordRouteImport.update({
   id: '/record',
   path: '/record',
@@ -32,35 +38,46 @@ const MeetingMeetingIdRoute = MeetingMeetingIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/record': typeof RecordRoute
+  '/settings': typeof SettingsRoute
   '/meeting/$meetingId': typeof MeetingMeetingIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/record': typeof RecordRoute
+  '/settings': typeof SettingsRoute
   '/meeting/$meetingId': typeof MeetingMeetingIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/record': typeof RecordRoute
+  '/settings': typeof SettingsRoute
   '/meeting/$meetingId': typeof MeetingMeetingIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/record' | '/meeting/$meetingId'
+  fullPaths: '/' | '/record' | '/settings' | '/meeting/$meetingId'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/record' | '/meeting/$meetingId'
-  id: '__root__' | '/' | '/record' | '/meeting/$meetingId'
+  to: '/' | '/record' | '/settings' | '/meeting/$meetingId'
+  id: '__root__' | '/' | '/record' | '/settings' | '/meeting/$meetingId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   RecordRoute: typeof RecordRoute
+  SettingsRoute: typeof SettingsRoute
   MeetingMeetingIdRoute: typeof MeetingMeetingIdRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/record': {
       id: '/record'
       path: '/record'
@@ -88,6 +105,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   RecordRoute: RecordRoute,
+  SettingsRoute: SettingsRoute,
   MeetingMeetingIdRoute: MeetingMeetingIdRoute,
 }
 export const routeTree = rootRouteImport
