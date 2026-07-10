@@ -3,10 +3,20 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 
 export interface Segment {
+  id?: number;
   speaker: string;
   text: string;
   startMs: number;
   endMs: number;
+}
+
+export interface SearchResult {
+  meetingId: string;
+  title: string;
+  createdAt: string;
+  source: 'title' | 'transcript' | 'notes' | 'summary';
+  snippet: string;
+  startMs: number | null;
 }
 
 export interface Meeting {
@@ -18,6 +28,8 @@ export interface Meeting {
   whisperModel: string | null;
   summaryJson: string | null;
   summarizedAt: string | null;
+  notes: string;
+  tags: string[];
 }
 
 export interface ModelInfo {
@@ -59,6 +71,16 @@ export const deleteMeeting = (meetingId: string): Promise<void> =>
   invoke('delete_meeting', { meetingId });
 export const exportMeeting = (meetingId: string): Promise<string> =>
   invoke('export_meeting', { meetingId });
+export const updateSegment = (segmentId: number, text: string): Promise<void> =>
+  invoke('update_segment', { segmentId, text });
+export const renameSpeaker = (meetingId: string, from: string, to: string): Promise<number> =>
+  invoke('rename_speaker', { meetingId, from, to });
+export const setNotes = (meetingId: string, notes: string): Promise<void> =>
+  invoke('set_notes', { meetingId, notes });
+export const setTags = (meetingId: string, tags: string[]): Promise<void> =>
+  invoke('set_tags', { meetingId, tags });
+export const searchMeetings = (query: string): Promise<SearchResult[]> =>
+  invoke('search_meetings', { query });
 export const getTranscript = (meetingId: string): Promise<Segment[]> =>
   invoke('get_transcript', { meetingId });
 export const listModels = (): Promise<ModelInfo[]> => invoke('list_models');

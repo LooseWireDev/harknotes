@@ -22,8 +22,9 @@ use chunker::{ChunkSink, ChunkSummary};
 /// Whisper.cpp input format: 16kHz, mono, signed 16-bit PCM.
 pub const SAMPLE_RATE: u32 = 16_000;
 
-/// Throttle for level events sent to the waveform UI.
-pub const LEVEL_EVENT_INTERVAL_MS: u64 = 100;
+/// Throttle for level events sent to the waveform UI. 50ms keeps the
+/// scrolling canvas waveform smooth without meaningful IPC cost.
+pub const LEVEL_EVENT_INTERVAL_MS: u64 = 50;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
