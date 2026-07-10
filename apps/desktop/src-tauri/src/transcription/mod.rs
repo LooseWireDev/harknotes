@@ -70,6 +70,23 @@ impl WorkerHandle {
 pub fn spawn(app: AppHandle, db: Arc<Db>) -> WorkerHandle {
     let (tx, rx) = unbounded::<ChunkJob>();
 
+    // Promote crash-leftover buffer snapshots into chunk rows first, so the
+    // resume scan below enqueues them and duration math sees them.
+    if let Ok(root) = crate::audio::recordings_dir(&app) {
+        crate::audio::recovery::recover_snapshots(&root, &db);
+    }
+
+    // A crash mid-recording leaves meetings stuck in 'recording': finalize
+    // them, then readiness-check the ones with nothing left to transcribe.
+    match db.finalize_stale_recordings() {
+        Ok(ids) => {
+            for id in ids {
+                check_ready(&app, &db, &id);
+            }
+        }
+        Err(e) => eprintln!("[transcription] stale-recording recovery failed: {e}"),
+    }
+
     // Resume anything interrupted by a previous crash/quit.
     match db.resumable_chunks() {
         Ok(chunks) => {

@@ -4,8 +4,9 @@
 // 200ms frame seen past the target.
 
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 
 use super::{StreamKind, SAMPLE_RATE};
@@ -24,6 +25,25 @@ pub const SILENCE_FRAME_RMS: f32 = 0.008;
 pub const SILENT_CHUNK_RMS: f32 = 0.004;
 /// Don't bother writing a trailing chunk shorter than this on finalize.
 const MIN_FINAL_SAMPLES: usize = SAMPLE_RATE as usize / 2;
+/// How often the in-progress buffer is snapshotted to disk so a hard crash
+/// loses at most this much audio (instead of a whole 45-60s chunk).
+const RECOVERY_FLUSH_INTERVAL: Duration = Duration::from_secs(5);
+
+/// Sidecar metadata for a recovery snapshot, read back by startup recovery.
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecoveryMeta {
+    pub index: u32,
+    pub start_ms: u64,
+}
+
+pub fn recovery_wav_path(dir: &Path, stream: StreamKind) -> PathBuf {
+    dir.join(format!("recovery-{}.wav", stream.as_str()))
+}
+
+pub fn recovery_meta_path(dir: &Path, stream: StreamKind) -> PathBuf {
+    dir.join(format!("recovery-{}.json", stream.as_str()))
+}
 
 /// Called synchronously after each chunk WAV is written — used to persist the
 /// chunk row and enqueue transcription before anything else can go wrong.
@@ -56,6 +76,7 @@ pub struct Chunker {
     scan_pos: usize,
     written: Vec<ChunkSummary>,
     sink: Option<ChunkSink>,
+    last_recovery_flush: Instant,
 }
 
 impl Chunker {
@@ -80,6 +101,7 @@ impl Chunker {
             scan_pos: TARGET_SAMPLES,
             written: Vec::new(),
             sink,
+            last_recovery_flush: Instant::now(),
         }
     }
 
@@ -111,7 +133,37 @@ impl Chunker {
             self.cut(at)?;
         }
 
+        // Crash insurance: periodically snapshot the un-cut buffer.
+        if self.last_recovery_flush.elapsed() >= RECOVERY_FLUSH_INTERVAL {
+            self.flush_recovery();
+            self.last_recovery_flush = Instant::now();
+        }
+
         Ok(())
+    }
+
+    /// Best-effort: a failed snapshot must never break live capture.
+    fn flush_recovery(&self) {
+        if self.buffer.is_empty() {
+            return;
+        }
+        let wav = recovery_wav_path(&self.dir, self.stream);
+        let meta = recovery_meta_path(&self.dir, self.stream);
+        if write_wav(&wav, &self.buffer).is_err() {
+            return;
+        }
+        let payload = RecoveryMeta {
+            index: self.chunk_index,
+            start_ms: self.buffer_start_sample * 1000 / SAMPLE_RATE as u64,
+        };
+        if let Ok(json) = serde_json::to_string(&payload) {
+            let _ = std::fs::write(meta, json);
+        }
+    }
+
+    fn clear_recovery(&self) {
+        let _ = std::fs::remove_file(recovery_wav_path(&self.dir, self.stream));
+        let _ = std::fs::remove_file(recovery_meta_path(&self.dir, self.stream));
     }
 
     /// Flush whatever remains as a final (possibly short) chunk.
@@ -120,6 +172,7 @@ impl Chunker {
             let at = self.buffer.len();
             self.cut(at)?;
         }
+        self.clear_recovery();
         Ok(self.written)
     }
 
@@ -152,6 +205,8 @@ impl Chunker {
         self.chunk_index += 1;
         self.quietest_frame = None;
         self.scan_pos = TARGET_SAMPLES;
+        // The snapshot now describes audio that lives in a real chunk.
+        self.clear_recovery();
         Ok(())
     }
 }

@@ -3,6 +3,7 @@
 
 pub mod chunker;
 pub mod mic;
+pub mod recovery;
 pub mod system_linux;
 
 use std::path::PathBuf;

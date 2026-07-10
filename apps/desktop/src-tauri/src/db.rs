@@ -247,6 +247,34 @@ impl Db {
         })
     }
 
+    /// Recover meetings left in 'recording' by a crash: estimate duration from
+    /// the last persisted chunk and move them to 'transcribing'. Returns the
+    /// affected meeting ids so the caller can run readiness checks.
+    pub fn finalize_stale_recordings(&self) -> Result<Vec<String>, String> {
+        let ids: Vec<String> = self.with(|c| {
+            let mut stmt =
+                c.prepare("SELECT id FROM meetings WHERE status = 'recording'")?;
+            let rows = stmt
+                .query_map([], |r| r.get(0))?
+                .collect::<rusqlite::Result<Vec<String>>>()?;
+            Ok(rows)
+        })?;
+        for id in &ids {
+            self.with(|c| {
+                c.execute(
+                    "UPDATE meetings SET status = 'transcribing',
+                       duration_seconds = COALESCE(
+                         (SELECT MAX(start_ms + duration_ms) / 1000 FROM chunks
+                           WHERE meeting_id = ?1), 0)
+                     WHERE id = ?1",
+                    [id],
+                )
+                .map(|_| ())
+            })?;
+        }
+        Ok(ids)
+    }
+
     /// Chunks to (re-)transcribe at startup: pending from a crash, plus failed
     /// ones worth retrying.
     pub fn resumable_chunks(&self) -> Result<Vec<PendingChunk>, String> {
@@ -428,6 +456,31 @@ mod tests {
         assert_eq!(transcript.len(), 2);
         assert_eq!(transcript[0].text, "hello");
         assert_eq!(transcript[1].speaker, "Meeting");
+    }
+
+    #[test]
+    fn recovers_stale_recordings() {
+        let db = Db::open_in_memory();
+        db.insert_meeting("stale", "Crashed", "base").unwrap();
+        db.insert_chunk("stale", "mic", 0, "/tmp/a.wav", 0, 45_000, ChunkStatus::Pending)
+            .unwrap();
+        db.insert_chunk("stale", "mic", 1, "/tmp/b.wav", 45_000, 30_000, ChunkStatus::Silent)
+            .unwrap();
+        db.insert_meeting("fine", "Normal", "base").unwrap();
+        db.finish_recording("fine", 10).unwrap();
+        db.try_mark_ready("fine").unwrap();
+
+        let ids = db.finalize_stale_recordings().unwrap();
+        assert_eq!(ids, vec!["stale".to_string()]);
+
+        let m = db.get_meeting("stale").unwrap();
+        assert_eq!(m.status, "transcribing");
+        assert_eq!(m.duration_seconds, 75); // (45000+30000)/1000
+
+        // Not ready until the pending chunk completes.
+        assert!(!db.try_mark_ready("stale").unwrap());
+        db.complete_chunk("stale", "mic", 0, &[]).unwrap();
+        assert!(db.try_mark_ready("stale").unwrap());
     }
 
     #[test]
