@@ -80,3 +80,8 @@ Linux is fully working (capture → live transcription → notes → summaries �
 export); deb/rpm bundles build at ~6MB. Known gaps: AppImage bundling fails
 under linuxdeploy on Fedora (deb/rpm unaffected), and macOS capture
 (ScreenCaptureKit) is the next platform target.
+
+## License
+
+Harknotes is free software, licensed under the [GNU AGPL-3.0](LICENSE).
+Forks and derivatives — including hosted versions — must remain open source.
